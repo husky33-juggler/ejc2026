@@ -214,7 +214,7 @@ const rawData = [
 let userSelections = {};
 let currentFilter = 'all';
 
-// MÓDOSÍTÁS: Felhasználói ID inicializálása a legelső megnyitáskor a tökéletes egyediségért
+// Felhasználói ID inicializálása a legelső megnyitáskor
 let userId = localStorage.getItem('ejc2026_userid');
 if (!userId) {
     userId = 'u_' + Math.random().toString(36).substring(2, 11);
@@ -252,17 +252,24 @@ function saveAndSync() {
     window.history.replaceState({}, '', window.location.pathname + query);
 }
 
-// MÓDOSÍTÁS: Az élő naptárlink kiegészítése a fix, egyedi felhasználói azonosítóval
+// FIX: A generált link most már garantáltan tartalmazza a user=u_ azonosítót minden állapotban
 function copyLiveCalendarLink() {
     const pairs = [];
     for (const id in userSelections) {
         if (userSelections[id] !== 0) pairs.push(`${id}:${userSelections[id]}`);
     }
-    const query = pairs.length > 0 ? `?p=${pairs.join(',')}` : '';
     
     let currentUrl = window.location.href.split('?')[0];
-    // Hozzáfűzzük a user ID-t, így a link üres állapotban is teljesen egyedi lesz a Google szerverének
-    let liveCalendarUrl = currentUrl + query + (query ? '&' : '?') + 'user=' + userId;
+    
+    // Összerakjuk a tiszta URL paramétereket úgy, hogy a user ID biztosan benne legyen
+    let paramString = '';
+    if (pairs.length > 0) {
+        paramString = `?p=${pairs.join(',')}&user=${userId}`;
+    } else {
+        paramString = `?user=${userId}`;
+    }
+    
+    let liveCalendarUrl = currentUrl + paramString;
 
     if (liveCalendarUrl.startsWith('https://')) {
         liveCalendarUrl = liveCalendarUrl.replace('https://', 'webcal://');
@@ -271,7 +278,7 @@ function copyLiveCalendarLink() {
     }
 
     navigator.clipboard.writeText(liveCalendarUrl).then(() => {
-        alert("🔗 Az élő, teljesen egyedi naptár hivatkozásod másolva a vágólapra!\n\nMost már átmehetsz a Google Naptáradba, és a 'Más naptárak > Hozzáadás URL-ről' menüpontba beillesztheted ezt a címet.");
+        alert("🔗 Az élő, teljesen egyedi naptár hivatkozásod másolva a vágólapra!\n\nIlleszd be a Google Naptárban a 'Más naptárak > Hozzáadás URL-ről' menüpontba.");
     }).catch(() => {
         alert("A naptár linkje:\n\n" + liveCalendarUrl);
     });
