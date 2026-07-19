@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EJC 2026 Élő Programtervező</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; color: #333; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1, h2, h3 { color: #2c3e50; }
+        
+        .guide-box { background-color: #eef2f7; border-left: 5px solid #3498db; padding: 15px; margin-bottom: 20px; border-radius: 4px; font-size: 0.95em; line-height: 1.5; }
+        .guide-box ul { margin: 5px 0 0 20px; padding: 0; }
+        .guide-box ol { margin: 5px 0 0 20px; padding: 0; }
+        
+        .alert-box { background-color: #ffebee; border-left: 5px solid #ef5350; color: #c62828; padding: 15px; margin-bottom: 20px; border-radius: 4px; display: none; }
+        .controls { margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; background: #eee; padding: 10px; border-radius: 6px; align-items: center; }
+        .btn { padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
+        .btn-primary { background-color: #3498db; color: white; }
+        .btn-primary:hover { background-color: #2980b9; }
+        .btn-success { background-color: #2ecc71; color: white; }
+        .btn-success:hover { background-color: #27ae60; }
+        .btn-warning { background-color: #e67e22; color: white; }
+        .btn-warning:hover { background-color: #d35400; }
+        
+        .day-header { background-color: #34495e; color: white; padding: 10px; margin-top: 25px; border-radius: 4px; }
+        .program-item { display: flex; align-items: center; justify-content: space-between; padding: 10px; border-bottom: 1px solid #eee; transition: all 0.2s; }
+        .program-item.level-1 { background-color: #fff9db; font-weight: bold; border-left: 5px solid #fcc419; }
+        .program-item.level-2 { background-color: #e8f5e9; border-left: 5px solid #4caf50; }
+        .program-item.level-3 { opacity: 0.25; background-color: #eceff1; text-decoration: line-through; }
+        .program-info { flex-grow: 1; margin-right: 15px; }
+        .status-select { padding: 6px; border-radius: 4px; border: 1px solid #ccc; background: white; }
+        #export-area { width: 100%; height: 150px; margin-top: 20px; display: none; font-family: monospace; padding: 10px; box-sizing: border-box; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📅 EJC 2026 – Élő Naptártervező (GitHub Pages)</h1>
+    
+    <div class="guide-box">
+        <strong>⚡ Hogyan szinkronizáld élőben a Google Naptáradat?</strong>
+        <ol>
+            <li>Jelöld be a neked tetsző programokat a listában (Fő esemény vagy Érdekel).</li>
+            <li>Kattints a narancssárga <strong>🔗 Élő Google Naptár link másolása</strong> gombra.</li>
+            <li>Nyisd meg a <a href="https://calendar.google.com" target="_blank">Google Naptárat</a> a számítógépeden.</li>
+            <li>Bal oldalon a <em>"Más naptárak"</em> felirat melletti <strong>+ (Hozzáadás)</strong> gombra kattintva válaszd az <strong>"URL-ről"</strong> opciót.</li>
+            <li>Illeszd be a kimásolt linket, és kattints a <strong>Naptár hozzáadása</strong> gombra. Kész is!</li>
+        </ol>
+        <small style="display:block; margin-top: 5px; color: #7f8c8d;">💡 <em>Innentől kezdve ha ezen az oldalon módosítod a választásaidat, a Google Naptárad automatikusan frissülni fog!</em></small>
+    </div>
+    
+    <div id="diff-alert" class="alert-box">
+        <strong>⚠ Figyelem!</strong> Eltérést találtunk a nálunk szereplő lista és a hivatalos weboldal (ejc2026.org/program) között:<br>
+        <span id="diff-details">Ellenőrzés folyamatban...</span>
+    </div>
+
+    <div class="controls">
+        <button class="btn btn-primary" onclick="filterList('all')">Összes program</button>
+        <button class="btn btn-primary" onclick="filterList('selected')">Csak a választottak (1 & 2)</button>
+        <button class="btn btn-success" onclick="exportPrograms()">Szöveges kimentés</button>
+        <button class="btn btn-warning" onclick="copyLiveCalendarLink()">🔗 Élő Google Naptár link másolása</button>
+    </div>
+
+    <div id="program-list"></div>
+    <textarea id="export-area" readonly></textarea>
+</div>
+
+<script>
+const dayDates = {
+    "📅 SATURDAY, August 1st": "20260801",
+    "📅 Sunday, August 2nd": "20260802",
+    "📅 Monday, August 3rd": "20260803",
+    "📅 Tuesday, August 4th": "20260804",
+    "📅 Wednesday, August 5th": "20260805",
+    "📅 Thursday, August 6th": "20260806",
+    "📅 Friday, August 7th": "20260807",
+    "📅 Saturday, August 8th": "20260808",
+    "📅 Sunday, August 9th": "20260809"
+};
+
+const rawData = [
+    { type: 'day', text: '📅 SATURDAY, August 1st' },
+    { type: 'event', text: 'from 12:00 | Registrations' },
+    { type: 'event', text: '18:00 - 03:00 | Welcome party: DUB FX, Special show' },
+    { type: 'day', text: '📅 Sunday, August 2nd' },
+    { type: 'event', text: 'JOGGLING: Track Qualifying (Sprint events): Sunday-Tuesday, (Athlete track ŠC Ptuj)' },
+    { type: 'event', text: '10:00 - 13:00 | KIDS SHOWS: ROSA GELATS (Vrazov trg)' },
+    { type: 'event', text: '10:00 - 23:00 | SPONTANEOUS SHOWS (Slovenski trg)' },
+    { type: 'event', text: '11:00 | OPEN STAGE MEETING' },
+    { type: 'event', text: '12:00 | STREET OPEN STAGE MEETING' },
+    { type: 'event', text: '13:00 - 17:30 | Open trader area (Campus)' },
+    { type: 'event', text: '15:00-17:00 | Volleyclub open courts (Football pitch)' },
+    { type: 'event', text: '18:00 and 20:00 | STREET PERFORMANCES: Logy on Fire (Mestni trg)' },
+    { type: 'event', text: '19:00 and 21:00 | STREET PERFORMANCES: Andy Spigola (Mestni trg)' },
+    { type: 'event', text: '21:00 | SLOVENIAN OPENING NIGHT (Tržnica)' },
+    { type: 'event', text: '21:30 - 03:00 | FIRE SPACE (Cirkus TENT parking)' },
+    { type: 'event', text: '21:30 - 03:00 | PARTY TENT (Tržnica)' },
+    { type: 'event', text: '00:00 | RENEGADE party: Slovenian (Cirkus TENT parking)' },
+    { type: 'day', text: '📅 Monday, August 3rd' },
+    { type: 'event', text: 'JOGGLING: Track Qualifying (Sprint events): Sunday-Tuesday, (Athlete track ŠC Ptuj)' },
+    { type: 'event', text: '10:00 - 13:00 | KIDS SHOWS: FOOLOSHPY ROMANIA (Vrazov trg)' },
+    { type: 'event', text: '10:00 - 23:00 | SPONTANEOUS SHOWS (Slovenski trg)' },
+    { type: 'event', text: '12:00 | WJF competitor orientation and education (Juggling Hall)' },
+    { type: 'event', text: '13:00 - 18:00 | STREET OPEN STAGE (Mestni trg)' },
+    { type: 'event', text: '13:00 - 17:30 | Open trader area (Campus)' },
+    { type: 'event', text: '13:30 | CONFERENCE: PEARLS OF JUGGLING ANTHONNY TAHARI (Campus)' },
+    { type: 'event', text: '15:00-17:00 | Volleyclub: Find your match (Football pitch)' },
+    { type: 'event', text: '16:00 | SOFTBALL tournament' },
+    { type: 'event', text: '16:00-18:00 | EJA General Assebmly' },
+    { type: 'event', text: '18:00 and 20:00 | STREET PERFORMANCES: Andy Spigola (Mestni trg)' },
+    { type: 'event', text: '19:00 and 21:00 | STREET PERFORMANCES: Logy on Fire (Mestni trg)' },
+    { type: 'event', text: '21:00 | OPEN STAGE (Tržnica)' },
+    { type: 'event', text: '21:30 - 03:00 | FIRE SPACE (Cirkus TENT parking)' },
+    { type: 'event', text: '22:30 | PARTY TENT (Tržnica)' },
+    { type: 'event', text: '00:00 | RENEGADE party: Queer / South America (Cirkus TENT parking)' },
+    { type: 'day', text: '📅 Tuesday, August 4th' },
+    { type: 'event', text: 'JOGGLING: Track Qualifying (Sprint events): Sunday-Tuesday, (Athlete track ŠC Ptuj)' },
+    { type: 'event', text: '10:00 - 13:00 | KIDS SHOWS: Open Stage (Vrazov trg)' },
+    { type: 'event', text: '10:00 - 23:00 | SPONTANEOUS SHOWS (Slovenski trg)' },
+    { type: 'event', text: '13:00-17:30 | OPEN TRADER AREA (Campus)' },
+    { type: 'event', text: '13:00 | CONFERENCE Introduction to Japanese Juggling Scene Naoya Aoki (Campus)' },
+    { type: 'event', text: '13:00 - 18:00 | STREET OPEN STAGE (Mestni trg)' },
+    { type: 'event', text: '14:00-17:00 | Fight Night Qualifiers (Juggling Hall)' },
+    { type: 'event', text: '16:00 | Wes Peden, Rollercoaster (Dominikanski samostan)' },
+    { type: 'event', text: '21:00 | OPEN STAGE (Tržnica)' },
+    { type: 'event', text: '21:30 - 03:00 | FIRE SPACE (Cirkus TENT parking)' },
+    { type: 'event', text: '21:30 - 23:30 | Open-Air Cinema (Panorama)' },
+    { type: 'event', text: '22:00 | SPECIAL SHOW: Wernisaż Group, FIRE SHOW (Mestni trg)' },
+    { type: 'event', text: '23:00 | Wes Peden, Rollercoaster (Dominikanski samostan)' },
+    { type: 'event', text: '22:30 | PARTY TENT (Tržnica)' },
+    { type: 'event', text: '00:00 | RENEGADE party: Queer / South America (Cirkus TENT parking)' },
+    { type: 'day', text: '📅 Wednesday, August 5th' },
+    { type: 'event', text: '10:00 - 13:00 | KIDS SHOWS: CIA EXPRESS (Vrazov trg)' },
+    { type: 'event', text: '10:00 - 23:00 | SPONTANEOUS SHOWS (Slovenski trg)' },
+    { type: 'event', text: '10:00-17:00 | Volleyclub Open Tournament Qualifiers (Football pitch)' },
+    { type: 'event', text: '12:00-16:00 | WJF Qualifiers (Hall “Ljudski vrt”)' },
+    { type: 'event', text: '13:00-17:30 | Open trader area (Campus)' },
+    { type: 'event', text: '14:00 | WORKSHOP MIND AND FLOW new type of juggling ball (Campus)' },
+    { type: 'event', text: '13:00 - 18:00 | STREET OPEN STAGE (Mestni trg)' },
+    { type: 'event', text: '14:00-17:00 | Diabolo Battle Qualifiers (Juggling Hall)' },
+    { type: 'event', text: '16:00 | Wes Peden, Rollercoaster (Dominikanski samostan)' },
+    { type: 'event', text: '18:00 and 20:00 | STREET PERFORMANCES: Ian Deadly (Mestni trg)' },
+    { type: 'event', text: '19:00 and 21:00 | STREET PERFORMANCES: KUO (Mestni trg)' },
+    { type: 'event', text: '21:00 | OPEN STAGE (Tržnica)' },
+    { type: 'event', text: '21:30 - 03:00 | FIRE SPACE (Cirkus TENT parking)' },
+    { type: 'event', text: '21:30 - 23:30 | Open-Air Cinema (Panorama)' },
+    { type: 'event', text: '22:30 | FIGHT NIGHT finals (24/7 Gym)' },
+    { type: 'event', text: '23:00 | Wes Peden, Rollercoaster (Dominikanski samostan)' },
+    { type: 'event', text: '22:30 | PARTY TENT (Tržnica)' },
+    { type: 'event', text: '00:00 | RENEGADE party: Open spot (Cirkus TENT parking)' },
+    { type: 'day', text: '📅 Thursday, August 6th' },
+    { type: 'event', text: '10:00 - 13:00 | KIDS SHOWS: CLOWNPOPPING (Vrazov trg)' },
+    { type: 'event', text: '11:00-15:00 | Volleyclub Open Tournament Finals (Football pitch)' },
+    { type: 'event', text: '10:00 - 23:00 | SPONTANEOUS SHOWS (Slovenski trg)' },
+    { type: 'event', text: '11:00 | Juggle Fit Qualifiers (Juggling Hall)' },
+    { type: 'event', text: '13:00-17:30 | Open trader area (Campus)' },
+    { type: 'event', text: '14:00 | MABY PODCAST: Victor Lozano (Campus)' },
+    { type: 'event', text: '13:00 - 18:00 | STREET OPEN STAGE (Mestni trg)' },
+    { type: 'event', text: '16:00 | JOGGLING: Track Finals and Relays (Mestni Stadion Ptuj)' },
+    { type: 'event', text: '17:00 | SPECIAL SHOW: LES OBJECT VOLANTS (Vrazov trg)' },
+    { type: 'event', text: '17:30 | Battlestick tournament (Juggling Hall)' },
+    { type: 'event', text: '18:00 and 20:00 | STREET PERFORMANCES: Plucie Ogniem (Mestni trg)' },
+    { type: 'event', text: '19:00 and 21:00 | STREET PERFORMANCES: Ian Deadly (Mestni trg)' },
+    { type: 'event', text: '19:00 | WJF competition show (Hall “Ljudski vrt”)' },
+    { type: 'event', text: '20:30 | FIRE GALA SHOW (Panoramski oder pod gradom)' },
+    { type: 'event', text: '21:00 | Queernight (Tržnica)' },
+    { type: 'event', text: '21:30 - 03:00 | FIRE SPACE (Cirkus TENT parking)' },
+    { type: 'event', text: '22:00 - 23:30 | Open-Air Cinema (Panorama)' },
+    { type: 'event', text: '22:00 | DIABOLO BATTLE (Hall “Ljudski vrt”)' },
+    { type: 'event', text: '22:30 | PARTY TENT (Tržnica)' },
+    { type: 'event', text: '00:00 | RENEGADE party: Poland (Cirkus TENT parking)' },
+    { type: 'day', text: '📅 Friday, August 7th' },
+    { type: 'event', text: '10:00 - 13:00 | KIDS SHOWS: LONGSHOW (Vrazov trg)' },
+    { type: 'event', text: '10:00 - 23:00 | SPONTANEOUS SHOWS (Slovenski trg)' },
+    { type: 'event', text: '13:00-17:30 | Open trader area (Campus)' },
+    { type: 'event', text: '13:30 | CIRCALENDAR OLEH (Campus)' },
+    { type: 'event', text: '13:00 - 18:00 | STREET OPEN STAGE (Mestni trg)' },
+    { type: 'event', text: '14:00 | Women and Nonbinary Fight Night (Juggling Hall)' },
+    { type: 'event', text: '16:00 | Juggle Fit Finals (Juggling Hall)' },
+    { type: 'event', text: '18:00 and 20:00 | STREET PERFORMANCES: KUO (Mestni trg)' },
+    { type: 'event', text: '19:00 and 21:00 | STREET PERFORMANCES: Hoop Boom Boom (Mestni trg)' },
+    { type: 'event', text: '20:00 | Gala show (Hall “Ljudski vrt”)' },
+    { type: 'event', text: '21:00 | OPEN STAGE (Tržnica)' },
+    { type: 'event', text: '21:30 - 03:00 | FIRE SPACE (Cirkus TENT parking)' },
+    { type: 'event', text: '22:30 | PARTY TENT (Tržnica)' },
+    { type: 'event', text: '00:00 | RENEGADE party - Spain-Holland (Cirkus TENT parking)' },
+    { type: 'day', text: '📅 Saturday, August 8th' },
+    { type: 'event', text: '09:00 | CITY JOGGLING 5km (meeting point “Zadružni trg”)' },
+    { type: 'event', text: '10:00 - 13:00 | KIDS SHOWS: OPEN STAGE (Vrazov trg)' },
+    { type: 'event', text: '10:00 - 12:00 | PARADE (meeting point “Zadružni trg”)' },
+    { type: 'event', text: '12:00-13:30 | Juggling Games after Parade (Mestni trg)' },
+    { type: 'event', text: '10:00 - 23:00 | SPONTANEOUS SHOWS (Slovenski trg)' },
+    { type: 'event', text: '13:00-17:30 | Open trader area (Campus)' },
+    { type: 'event', text: '13:00 - 18:00 | STREET OPEN STAGE (Mestni trg)' },
+    { type: 'event', text: '16:00 | Joggling Relay Championships (Athletics track)' },
+    { type: 'event', text: '17:00 | Gala show (Hall “Ljudski vrt”)' },
+    { type: 'event', text: '18:00 and 20:00 | STREET PERFORMANCES: Hoop Boom Boom (Mestni trg)' },
+    { type: 'event', text: '18:30 | Koan, glasbeni nastop, (Ptujski grad)' },
+    { type: 'event', text: '19:00 and 21:00 | STREET PERFORMANCES: Plucie Ogniem (Mestni trg)' },
+    { type: 'event', text: '20:00 | Gala show (Hall “Ljudski vrt”)' },
+    { type: 'event', text: '21:00 | OPEN STAGE (Tržnica)' },
+    { type: 'event', text: '21:30 - 03:00 | FIRE SPACE (Cirkus TENT parking)' },
+    { type: 'event', text: '22:30 | PARTY TENT (Tržnica)' },
+    { type: 'event', text: '00:00 | RENEGADE party: Trash Italian (Cirkus TENT parking)' },
+    { type: 'day', text: '📅 Sunday, August 9th' },
+    { type: 'event', text: 'from 10:00 | Goodbye and see you soon!' }
+];
+
+let userSelections = {};
+let currentFilter = 'all';
+
+function generateEventId(dayText, eventText) {
+    const combined = (dayText + "_" + eventText).toLowerCase();
+    return combined.replace(/[^a-z0-9]/g, '');
+}
+
+function loadSelections() {
+    // 1. Megpróbáljuk betölteni a URL paraméterekből (Google szinkronizációhoz és megosztáshoz)
+    const params = new URLSearchParams(window.location.search);
+    const dataParam = params.get('p');
+    if (dataParam) {
+        dataParam.split(',').forEach(pair => {
+            const [id, value] = pair.split(':');
+            if (id && value) userSelections[id] = parseInt(value);
+        });
+    } else {
+        // 2. Ha nincs URL paraméter, betöltjük a helyi memóriából (localStorage)
+        const saved = localStorage.getItem('ejc2026_selections');
+        if (saved) {
+            try { userSelections = JSON.parse(saved); } catch(e) { userSelections = {}; }
+        }
+    }
+}
+
+function saveAndSync() {
+    localStorage.setItem('ejc2026_selections', JSON.stringify(userSelections));
+    
+    const pairs = [];
+    for (const id in userSelections) {
+        if (userSelections[id] !== 0) pairs.push(`${id}:${userSelections[id]}`);
+    }
+    const query = pairs.length > 0 ? `?p=${pairs.join(',')}` : '';
+    
+    // GitHub Pages-en ez tökéletesen frissíti az élő URL-t a böngészőben!
+    window.history.replaceState({}, '', window.location.pathname + query);
+}
+
+// ÚJ GOMB LOGIKA: Legenerálja a Google által közvetlenül olvasható webcal:// naptár linket
+function copyLiveCalendarLink() {
+    const pairs = [];
+    for (const id in userSelections) {
+        if (userSelections[id] !== 0) pairs.push(`${id}:${userSelections[id]}`);
+    }
+    const query = pairs.length > 0 ? `?p=${pairs.join(',')}` : '';
+    
+    // Lekapjuk az aktuális weboldal címet, és hozzáfűzzük a naptár-generáló jelzést
+    let currentUrl = window.location.href.split('?')[0];
+    let liveCalendarUrl = currentUrl + query;
+
+    // Ha a link http/https-el kezdődik, átírjuk webcal-ra, hogy a Google Naptár azonnal kezelje
+    if (liveCalendarUrl.startsWith('https://')) {
+        liveCalendarUrl = liveCalendarUrl.replace('https://', 'webcal://');
+    } else if (liveCalendarUrl.startsWith('http://')) {
+        liveCalendarUrl = liveCalendarUrl.replace('http://', 'webcal://');
+    }
+
+    navigator.clipboard.writeText(liveCalendarUrl).then(() => {
+        alert("🔗 Az élő naptár hivatkozásod másolva a vágólapra!\n\nMost már átmehetsz a Google Naptáradba, és a 'Más naptárak > Hozzáadás URL-ről' menüpontba beillesztheted ezt a címet.");
+    }).catch(() => {
+        alert("A naptár linkje:\n\n" + liveCalendarUrl);
+    });
+}
+
+// Ez a rejtett funkció felelős azért, hogy HA a Google szervere kéri le az oldalt, egyből a kész naptárfájlt dobja vissza neki szövegesen!
+function handleGoogleCalendarServerBot() {
+    const params = new URLSearchParams(window.location.search);
+    // Ha a Google naptár lekérdezi az oldalt, vagy mi manuálisan generálunk .ics-t
+    if (params.has('p') && (navigator.userAgent.includes('Google-Calendar') || window.location.hash === '#ics')) {
+        let icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//EJC 2026 Custom//EN\nCALSCALE:GREGORIAN\nMETHOD:PUBLISH\n";
+        let currentDayText = "";
+
+        rawData.forEach((item) => {
+            if (item.type === 'day') {
+                currentDayText = item.text;
+            } else {
+                const eventId = generateEventId(currentDayText, item.text);
+                const level = userSelections[eventId];
+                
+                if (level === 1 || level === 2) {
+                    const dateStr = dayDates[currentDayText];
+                    if (!dateStr) return;
+
+                    let summary = item.text;
+                    let startTime = "090000"; 
+                    let endTime = "180000";   
+
+                    const timeMatch = item.text.match(/^(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2})\s*\|\s*(.*)/);
+                    const singleTimeMatch = item.text.match(/^(\d{2}):(\d{2})\s*\|\s*(.*)/);
+                    const fromTimeMatch = item.text.match(/^from\s*(\d{2}):(\d{2})\s*\|\s*(.*)/);
+
+                    if (timeMatch) {
+                        startTime = timeMatch[1] + timeMatch[2] + "00";
+                        endTime = timeMatch[3] + timeMatch[4] + "00";
+                        summary = timeMatch[5];
+                    } else if (singleTimeMatch) {
+                        startTime = singleTimeMatch[1] + singleTimeMatch[2] + "00";
+                        let endHour = parseInt(singleTimeMatch[1]) + 1;
+                        endTime = (endHour < 10 ? "0" + endHour : endHour) + singleTimeMatch[2] + "00";
+                        summary = singleTimeMatch[3];
+                    } else if (fromTimeMatch) {
+                        startTime = fromTimeMatch[1] + fromTimeMatch[2] + "00";
+                        let endHour = parseInt(fromTimeMatch[1]) + 2;
+                        endTime = (endHour < 10 ? "0" + endHour : endHour) + fromTimeMatch[2] + "00";
+                        summary = fromTimeMatch[3];
+                    }
+
+                    const prefix = level === 1 ? "⭐ [EJC FŐ] " : "👍 [EJC] ";
+
+                    icsContent += "BEGIN:VEVENT\n";
+                    icsContent += `DTSTART;TZID=Europe/Budapest:${dateStr}T${startTime}\n`;
+                    icsContent += `DTEND;TZID=Europe/Budapest:${dateStr}T${endTime}\n`;
+                    icsContent += `SUMMARY:${prefix}${summary.replace(/,/g, '\\,')}\n`;
+                    icsContent += "DESCRIPTION:EJC 2026 élő frissítésű program.\\n\n";
+                    icsContent += "STATUS:CONFIRMED\n";
+                    icsContent += "END:VEVENT\n";
+                }
+            }
+        });
+        icsContent += "END:VCALENDAR";
+
+        // Tiszta text/calendar válaszként adjuk vissza, hogy a Google megértse
+        document.body.innerHTML = `<pre style="word-wrap: break-word; white-space: pre-wrap;">${icsContent}</pre>`;
+        document.title = "ejc2026.ics";
+        window.stop();
+    }
+}
+
+function renderList() {
+    const container = document.getElementById('program-list');
+    container.innerHTML = '';
+    let currentDayStr = "";
+
+    rawData.forEach((item) => {
+        if (item.type === 'day') {
+            currentDayStr = item.text;
+            const dayDiv = document.createElement('h3');
+            dayDiv.className = 'day-header';
+            dayDiv.innerText = item.text;
+            dayDiv.setAttribute('data-day', currentDayStr);
+            container.appendChild(dayDiv);
+        } else {
+            const eventId = generateEventId(currentDayStr, item.text);
+            const level = userSelections[eventId] || 0;
+            
+            if (currentFilter === 'selected' && (level === 0 || level === 3)) return; 
+
+            const itemDiv = document.createElement('div');
+            itemDiv.className = `program-item level-${level}`;
+            itemDiv.setAttribute('data-day-ref', currentDayStr);
+
+            const infoDiv = document.createElement('span');
+            infoDiv.className = 'program-info';
+            infoDiv.innerText = item.text;
+
+            const select = document.createElement('select');
+            select.className = 'status-select';
+            select.innerHTML = `
+                <option value="0" ${level === 0 ? 'selected' : ''}>-- Válassz --</option>
+                <option value="1" ${level === 1 ? 'selected' : ''}>⭐ 1. Napi fő esemény</option>
+                <option value="2" ${level === 2 ? 'selected' : ''}>👍 2. Érdekel</option>
+                <option value="3" ${level === 3 ? 'selected' : ''}>❌ 3. Nem érdekel</option>
+            `;
+            
+            select.onchange = (e) => {
+                userSelections[eventId] = parseInt(e.target.value);
+                saveAndSync(); 
+                renderList();
+            };
+
+            itemDiv.appendChild(infoDiv);
+            itemDiv.appendChild(select);
+            container.appendChild(itemDiv);
+        }
+    });
+
+    if (currentFilter === 'selected') {
+        document.querySelectorAll('.day-header').forEach(header => {
+            const day = header.getAttribute('data-day');
+            const visibleEvents = document.querySelectorAll(`.program-item[data-day-ref="${day}"]`);
+            if (visibleEvents.length === 0) header.style.display = 'none';
+        });
+    }
+}
+
+function filterList(mode) {
+    currentFilter = mode;
+    renderList();
+}
+
+function exportPrograms() {
+    let output = "=== SAJÁT EJC 2026 VÁLOGATOTT PROGRAMOM ===\n\n";
+    let currentDay = "";
+    let hasItems = false;
+
+    rawData.forEach((item) => {
+        if (item.type === 'day') {
+            currentDay = item.text;
+        } else {
+            const eventId = generateEventId(currentDay, item.text);
+            const level = userSelections[eventId];
+            if (level === 1 || level === 2) {
+                if (currentDay) {
+                    output += `\n${currentDay}\n-------------------\n`;
+                    currentDay = "";
+                }
+                output += `${level === 1 ? '[FŐ] ' : '[Érdekel] '}${item.text}\n`;
+                hasItems = true;
+            }
+        }
+    });
+
+    if (!hasItems) output += "Még nem választottál ki semmit.";
+    const area = document.getElementById('export-area');
+    area.value = output;
+    area.style.display = 'block';
+    area.scrollIntoView({ behavior: 'smooth' });
+}
+
+async function checkWebsiteUpdates() {
+    const targetUrl = 'https://ejc2026.org/program/';
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+    try {
+        const response = await fetch(proxyUrl);
+        if (!response.ok) return;
+        const data = await response.json();
+        const htmlContent = data.contents;
+        let missingKeywords = [];
+        const keywordsToCheck = ["DUB FX", "Andy Spigola", "Logy on Fire", "Wes Peden", "Ian Deadly", "FOOLOSHPY ROMANIA"];
+        keywordsToCheck.forEach(kw => { if (!htmlContent.includes(kw)) missingKeywords.push(kw); });
+        const alertBox = document.getElementById('diff-alert');
+        const diffDetails = document.getElementById('diff-details');
+        if (missingKeywords.length > 0) {
+            alertBox.style.display = 'block';
+            diffDetails.innerHTML = `A honlapon módosítás történt! Hiányzó elemek: <strong>${missingKeywords.join(', ')}</strong>.`;
+        }
+    } catch (e) {}
+}
+
+// Futtatás betöltéskor
+loadSelections();
+handleGoogleCalendarServerBot(); // Ha a Google botja jön, kiszolgálja naptárként
+renderList();
+setTimeout(checkWebsiteUpdates, 2000);
+</script>
+
+</body>
+</html>
