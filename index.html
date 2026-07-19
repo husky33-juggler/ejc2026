@@ -258,7 +258,10 @@ function saveAndSync() {
     localStorage.setItem('ejc2026_selections', JSON.stringify(userSelections));
     const pairs = [];
     for (const id in userSelections) {
-        if (userSelections[id] !== 0) pairs.push(`${id}:${userSelections[id]}`);
+        // FIX: Csak az 1-es és 2-es értékű elemeket szinkronizáljuk a linkbe, a 3-ast (nem érdekel) elhagyjuk
+        if (userSelections[id] === 1 || userSelections[id] === 2) {
+            pairs.push(`${id}:${userSelections[id]}`);
+        }
     }
     const query = pairs.length > 0 ? `?p=${pairs.join(',')}` : '';
     window.history.replaceState({}, '', window.location.pathname + query);
@@ -267,7 +270,7 @@ function saveAndSync() {
 function copyLiveCalendarLink() {
     const pairs = [];
     for (const id in userSelections) {
-        if (userSelections[id] !== 0) pairs.push(`${id}:${userSelections[id]}`);
+        if (userSelections[id] === 1 || userSelections[id] === 2) pairs.push(`${id}:${userSelections[id]}`);
     }
     let currentUrl = window.location.href.split('?')[0];
     let paramString = pairs.length > 0 ? `?p=${pairs.join(',')}&user=${userId}` : `?user=${userId}`;
@@ -284,9 +287,9 @@ function copyLiveCalendarLink() {
 function copyConfigCode() {
     const pairs = [];
     for (const id in userSelections) {
-        if (userSelections[id] !== 0) pairs.push(`${id}:${userSelections[id]}`);
+        if (userSelections[id] === 1 || userSelections[id] === 2) pairs.push(`${id}:${userSelections[id]}`);
     }
-    if(pairs.length === 0) { alert("Üres lista."); return; }
+    if(pairs.length === 0) { alert("Még semmit sem jelöltél be!"); return; }
     const configCode = pairs.join(',');
     navigator.clipboard.writeText(configCode).then(() => {
         alert("📋 Kód sikeresen másolva!");
@@ -309,7 +312,6 @@ function importConfigCode() {
     } catch(e) { alert("Hiba."); }
 }
 
-// FIX: Teljesen áttervezett naptár-generáló motor éjféli, dupla idősávos és nyers szöveges javításokkal
 function handleGoogleCalendarServerBot() {
     const params = new URLSearchParams(window.location.search);
     if (params.has('p') && (navigator.userAgent.includes('Google-Calendar') || window.location.hash === '#ics')) {
@@ -328,17 +330,11 @@ function handleGoogleCalendarServerBot() {
                     if (!dateStr) return;
 
                     const prefix = level === 1 ? "⭐ [EJC FŐ] " : "👍 [EJC] ";
-                    
-                    // Feldolgozandó al-események tömbje (dupla időpontok miatt)
                     let subEvents = [];
 
-                    // 1. ESET: Dupla időpontok, pl: "18:00 and 20:00 | STREET PERFORMANCES..."
                     const doubleTimeMatch = item.text.match(/^(\d{2}):(\d{2})\s+and\s+(\d{2}):(\d{2})\s*\|\s*(.*)/);
-                    // 2. ESET: Hagyományos tól-ig idősáv, pl: "18:00 - 03:00 | Welcome party..."
                     const timeMatch = item.text.match(/^(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2})\s*\|\s*(.*)/);
-                    // 3. ESET: Egyetlen fix időpont, pl: "21:00 | OPEN STAGE..." vagy "00:00 | RENEGADE..."
                     const singleTimeMatch = item.text.match(/^(\d{2}):(\d{2})\s*\|\s*(.*)/);
-                    // 4. ESET: Kezdési időpont, pl: "from 12:00 | Registrations"
                     const fromTimeMatch = item.text.match(/^from\s*(\d{2}):(\d{2})\s*\|\s*(.*)/);
 
                     if (doubleTimeMatch) {
@@ -356,11 +352,9 @@ function handleGoogleCalendarServerBot() {
                         let eH = String(parseInt(sH) + 2).padStart(2, '0');
                         subEvents.push({ startH: sH, startM: fromTimeMatch[2], endH: eH, endM: fromTimeMatch[2], title: fromTimeMatch[3] });
                     } else {
-                        // 5. ESET: Egész napos esemény (időpont nélküli programok)
                         subEvents.push({ isAllDay: true, title: item.text });
                     }
 
-                    // A kinyert al-eseményeket lefordítjuk VEVENT-ekké
                     subEvents.forEach(sub => {
                         icsContent += "BEGIN:VEVENT\n";
                         
@@ -375,18 +369,15 @@ function handleGoogleCalendarServerBot() {
                             let sH = parseInt(sub.startH);
                             let eH = parseInt(sub.endH);
 
-                            // Logikai Éjféli Korrekció: Ha a program egy nap alatt van listázva, de hajnali 00:00 és 03:00 között kezdődik, az valójában a következő nap hajnala.
                             if (sH >= 0 && sH <= 3) {
                                 currentEvDate = addDays(dateStr, 1);
                                 currentEvEndDate = currentEvDate;
                             }
                             
-                            // Ha tól-ig sáv van és a végóra kisebb, mint a kezdőóra, átnyúlik a következő napra (pl: 18:00 - 03:00)
                             if (sub.isRange && eH < sH) {
                                 currentEvEndDate = addDays(currentEvDate, 1);
                             }
                             
-                            // Biztonsági korrekció túlcsorduló órákra (pl. 23 + 1 = 24 -> 00)
                             let startHourStr = sub.startH;
                             let endHourStr = sub.endH;
                             if (eH >= 24) {
@@ -398,8 +389,9 @@ function handleGoogleCalendarServerBot() {
                             icsContent += `DTEND;TZID=Europe/Budapest:${currentEvEndDate}T${endHourStr}${sub.endM}00\n`;
                         }
 
-                        // Fix: Nincs több escápelt \, hiba a címekben
-                        icsContent += `SUMMARY:${prefix}${sub.title.trim()}\n`;
+                        let cleanTitle = sub.title.replace(/\\/g, '').trim();
+
+                        icsContent += `SUMMARY:${prefix}${cleanTitle}\n`;
                         icsContent += "DESCRIPTION:EJC 2026 élő program.\\n\n";
                         icsContent += "STATUS:CONFIRMED\n";
                         icsContent += "END:VEVENT\n";
@@ -474,23 +466,30 @@ function renderList() {
 
 function filterList(mode) { currentFilter = mode; renderList(); }
 
+// FIX: Javított szöveges kimentő motor. Megtartja a napokat és minden kiválasztott elemet listáz!
 function exportPrograms() {
     let output = "=== SAJÁT EJC 2026 VÁLOGATOTT PROGRAMOM ===\n\n";
-    let currentDay = "";
+    let activeDayHeader = "";
     let hasItems = false;
+
     rawData.forEach((item) => {
-        if (item.type === 'day') currentDay = item.text;
-        else {
-            const eventId = generateEventId(currentDay, item.text);
+        if (item.type === 'day') {
+            activeDayHeader = item.text; // Csak megjegyezzük a napot, nem töröljük többet
+        } else {
+            const eventId = generateEventId(activeDayHeader, item.text);
             const level = userSelections[eventId];
             if (level === 1 || level === 2) {
-                if (currentDay) { output += `\n${currentDay}\n-------------------\n`; currentDay = ""; }
+                if (activeDayHeader) {
+                    output += `\n${activeDayHeader}\n-------------------\n`;
+                    activeDayHeader = ""; // Elrejtjük a fejlécet erre a napra, hogy ne duplázódjon
+                }
                 output += `${level === 1 ? '[FŐ] ' : '[Érdekel] '}${item.text}\n`;
                 hasItems = true;
             }
         }
     });
-    if (!hasItems) output += "Üres.";
+
+    if (!hasItems) output += "Még nem választottál ki semmit.";
     const area = document.getElementById('export-area');
     area.value = output; area.style.display = 'block';
     area.scrollIntoView({ behavior: 'smooth' });
