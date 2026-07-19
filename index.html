@@ -83,6 +83,20 @@ const dayDates = {
     "📅 Sunday, August 9th": "20260809"
 };
 
+// Segédfüggvény a dátum léptetéséhez (ha éjfél után ér véget az esemény)
+function addDays(dateStr, days) {
+    let year = parseInt(dateStr.substring(0,4));
+    let month = parseInt(dateStr.substring(4,6)) - 1;
+    let day = parseInt(dateStr.substring(6,8));
+    let date = new Date(year, month, day);
+    date.setDate(date.getDate() + days);
+    
+    let y = date.getFullYear();
+    let m = String(date.getMonth() + 1).padStart(2, '0');
+    let d = String(date.getDate()).padStart(2, '0');
+    return `${y}${m}${d}`;
+}
+
 const rawData = [
     { type: 'day', text: '📅 SATURDAY, August 1st' },
     { type: 'event', text: 'from 12:00 | Registrations' },
@@ -214,7 +228,6 @@ const rawData = [
 let userSelections = {};
 let currentFilter = 'all';
 
-// Felhasználói ID inicializálása a legelső megnyitáskor
 let userId = localStorage.getItem('ejc2026_userid');
 if (!userId) {
     userId = 'u_' + Math.random().toString(36).substring(2, 11);
@@ -252,33 +265,20 @@ function saveAndSync() {
     window.history.replaceState({}, '', window.location.pathname + query);
 }
 
-// FIX: A generált link most már garantáltan tartalmazza a user=u_ azonosítót minden állapotban
 function copyLiveCalendarLink() {
     const pairs = [];
     for (const id in userSelections) {
         if (userSelections[id] !== 0) pairs.push(`${id}:${userSelections[id]}`);
     }
-    
     let currentUrl = window.location.href.split('?')[0];
-    
-    // Összerakjuk a tiszta URL paramétereket úgy, hogy a user ID biztosan benne legyen
-    let paramString = '';
-    if (pairs.length > 0) {
-        paramString = `?p=${pairs.join(',')}&user=${userId}`;
-    } else {
-        paramString = `?user=${userId}`;
-    }
-    
+    let paramString = pairs.length > 0 ? `?p=${pairs.join(',')}&user=${userId}` : `?user=${userId}`;
     let liveCalendarUrl = currentUrl + paramString;
 
-    if (liveCalendarUrl.startsWith('https://')) {
-        liveCalendarUrl = liveCalendarUrl.replace('https://', 'webcal://');
-    } else if (liveCalendarUrl.startsWith('http://')) {
-        liveCalendarUrl = liveCalendarUrl.replace('http://', 'webcal://');
-    }
+    if (liveCalendarUrl.startsWith('https://')) liveCalendarUrl = liveCalendarUrl.replace('https://', 'webcal://');
+    else if (liveCalendarUrl.startsWith('http://')) liveCalendarUrl = liveCalendarUrl.replace('http://', 'webcal://');
 
     navigator.clipboard.writeText(liveCalendarUrl).then(() => {
-        alert("🔗 Az élő, teljesen egyedi naptár hivatkozásod másolva a vágólapra!\n\nIlleszd be a Google Naptárban a 'Más naptárak > Hozzáadás URL-ről' menüpontba.");
+        alert("🔗 Az élő, teljesen egyedi naptár hivatkozásod másolva a vágólapra!");
     }).catch(() => {
         alert("A naptár linkje:\n\n" + liveCalendarUrl);
     });
@@ -289,20 +289,15 @@ function copyConfigCode() {
     for (const id in userSelections) {
         if (userSelections[id] !== 0) pairs.push(`${id}:${userSelections[id]}`);
     }
-    if(pairs.length === 0) {
-        alert("Még semmit sem jelöltél be, nincs mit másolni!");
-        return;
-    }
+    if(pairs.length === 0) { alert("Üres lista."); return; }
     const configCode = pairs.join(',');
     navigator.clipboard.writeText(configCode).then(() => {
-        alert("📋 Az órarended egyedi kódja sikeresen másolva a vágólapra!");
-    }).catch(() => {
-        alert("A kódod:\n\n" + configCode);
+        alert("📋 Kód sikeresen másolva!");
     });
 }
 
 function importConfigCode() {
-    const code = prompt("Illeszd be ide a korábban kimásolt órarend kódot:");
+    const code = prompt("Kód beillesztése:");
     if (!code) return;
     try {
         const newSelections = {};
@@ -313,12 +308,11 @@ function importConfigCode() {
         userSelections = newSelections;
         saveAndSync();
         renderList();
-        alert("📥 Az órarend sikeresen beolvasva és elmentve!");
-    } catch(e) {
-        alert("Érvénytelen kód formátum.");
-    }
+        alert("📥 Beolvasva!");
+    } catch(e) { alert("Hiba."); }
 }
 
+// FIX: Okos naptárfájl generátor (Egész napos programok és éjféli átnyúlások javítása)
 function handleGoogleCalendarServerBot() {
     const params = new URLSearchParams(window.location.search);
     if (params.has('p') && (navigator.userAgent.includes('Google-Calendar') || window.location.hash === '#ics')) {
@@ -337,36 +331,54 @@ function handleGoogleCalendarServerBot() {
                     if (!dateStr) return;
 
                     let summary = item.text;
-                    let startTime = "090000"; 
-                    let endTime = "180000";   
-
+                    const prefix = level === 1 ? "⭐ [EJC FŐ] " : "👍 [EJC] ";
+                    
                     const timeMatch = item.text.match(/^(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2})\s*\|\s*(.*)/);
                     const singleTimeMatch = item.text.match(/^(\d{2}):(\d{2})\s*\|\s*(.*)/);
                     const fromTimeMatch = item.text.match(/^from\s*(\d{2}):(\d{2})\s*\|\s*(.*)/);
 
+                    icsContent += "BEGIN:VEVENT\n";
+
                     if (timeMatch) {
-                        startTime = timeMatch[1] + timeMatch[2] + "00";
-                        endTime = timeMatch[3] + timeMatch[4] + "00";
+                        let startH = timeMatch[1], startM = timeMatch[2];
+                        let endH = timeMatch[3], endM = timeMatch[4];
                         summary = timeMatch[5];
+                        
+                        let endDateStr = dateStr;
+                        // Ha a végóra kisebb, mint a kezdőóra, akkor az esemény átnyúlik másnapra (pl. 18:00 - 03:00)
+                        if (parseInt(endH) < parseInt(startH)) {
+                            endDateStr = addDays(dateStr, 1);
+                        }
+                        
+                        icsContent += `DTSTART;TZID=Europe/Budapest:${dateStr}T${startH}${startM}00\n`;
+                        icsContent += `DTEND;TZID=Europe/Budapest:${endDateStr}T${endH}${endM}00\n`;
                     } else if (singleTimeMatch) {
-                        startTime = singleTimeMatch[1] + singleTimeMatch[2] + "00";
-                        let endHour = parseInt(singleTimeMatch[1]) + 1;
-                        endTime = (endHour < 10 ? "0" + endHour : endHour) + singleTimeMatch[2] + "00";
+                        let startH = singleTimeMatch[1], startM = singleTimeMatch[2];
                         summary = singleTimeMatch[3];
+                        let endH = String(parseInt(startH) + 1).padStart(2, '0');
+                        let endDateStr = (parseInt(endH) >= 24) ? addDays(dateStr, 1) : dateStr;
+                        if(parseInt(endH) >= 24) endH = String(parseInt(endH) - 24).padStart(2, '0');
+
+                        icsContent += `DTSTART;TZID=Europe/Budapest:${dateStr}T${startH}${startM}00\n`;
+                        icsContent += `DTEND;TZID=Europe/Budapest:${endDateStr}T${endH}${startM}00\n`;
                     } else if (fromTimeMatch) {
-                        startTime = fromTimeMatch[1] + fromTimeMatch[2] + "00";
-                        let endHour = parseInt(fromTimeMatch[1]) + 2;
-                        endTime = (endHour < 10 ? "0" + endHour : endHour) + fromTimeMatch[2] + "00";
+                        let startH = fromTimeMatch[1], startM = fromTimeMatch[2];
                         summary = fromTimeMatch[3];
+                        let endH = String(parseInt(startH) + 2).padStart(2, '0');
+                        let endDateStr = (parseInt(endH) >= 24) ? addDays(dateStr, 1) : dateStr;
+                        if(parseInt(endH) >= 24) endH = String(parseInt(endH) - 24).padStart(2, '0');
+
+                        icsContent += `DTSTART;TZID=Europe/Budapest:${dateStr}T${startH}${startM}00\n`;
+                        icsContent += `DTEND;TZID=Europe/Budapest:${endDateStr}T${endH}${startM}00\n`;
+                    } else {
+                        // HA NINCS IDŐPONT (pl. Joggling): Beállítjuk tisztán egész napos eseménynek
+                        let nextDayStr = addDays(dateStr, 1);
+                        icsContent += `DTSTART;VALUE=DATE:${dateStr}\n`;
+                        icsContent += `DTEND;VALUE=DATE:${nextDayStr}\n`;
                     }
 
-                    const prefix = level === 1 ? "⭐ [EJC FŐ] " : "👍 [EJC] ";
-
-                    icsContent += "BEGIN:VEVENT\n";
-                    icsContent += `DTSTART;TZID=Europe/Budapest:${dateStr}T${startTime}\n`;
-                    icsContent += `DTEND;TZID=Europe/Budapest:${dateStr}T${endTime}\n`;
                     icsContent += `SUMMARY:${prefix}${summary.replace(/,/g, '\\,')}\n`;
-                    icsContent += "DESCRIPTION:EJC 2026 élő frissítésű program.\\n\n";
+                    icsContent += "DESCRIPTION:EJC 2026 élő program.\\n\n";
                     icsContent += "STATUS:CONFIRMED\n";
                     icsContent += "END:VEVENT\n";
                 }
@@ -437,37 +449,27 @@ function renderList() {
     }
 }
 
-function filterList(mode) {
-    currentFilter = mode;
-    renderList();
-}
+function filterList(mode) { currentFilter = mode; renderList(); }
 
 function exportPrograms() {
     let output = "=== SAJÁT EJC 2026 VÁLOGATOTT PROGRAMOM ===\n\n";
     let currentDay = "";
     let hasItems = false;
-
     rawData.forEach((item) => {
-        if (item.type === 'day') {
-            currentDay = item.text;
-        } else {
+        if (item.type === 'day') currentDay = item.text;
+        else {
             const eventId = generateEventId(currentDay, item.text);
             const level = userSelections[eventId];
             if (level === 1 || level === 2) {
-                if (currentDay) {
-                    output += `\n${currentDay}\n-------------------\n`;
-                    currentDay = "";
-                }
+                if (currentDay) { output += `\n${currentDay}\n-------------------\n`; currentDay = ""; }
                 output += `${level === 1 ? '[FŐ] ' : '[Érdekel] '}${item.text}\n`;
                 hasItems = true;
             }
         }
     });
-
-    if (!hasItems) output += "Még nem választottál ki semmit.";
+    if (!hasItems) output += "Üres.";
     const area = document.getElementById('export-area');
-    area.value = output;
-    area.style.display = 'block';
+    area.value = output; area.style.display = 'block';
     area.scrollIntoView({ behavior: 'smooth' });
 }
 
@@ -486,7 +488,7 @@ async function checkWebsiteUpdates() {
         const diffDetails = document.getElementById('diff-details');
         if (missingKeywords.length > 0) {
             alertBox.style.display = 'block';
-            diffDetails.innerHTML = `A honlapon módosítás történt! Hiányzó elemek: <strong>${missingKeywords.join(', ')}</strong>.`;
+            diffDetails.innerHTML = `Módosítás történt a hivatalos oldalon!`;
         }
     } catch (e) {}
 }
@@ -496,6 +498,5 @@ handleGoogleCalendarServerBot();
 renderList();
 setTimeout(checkWebsiteUpdates, 2000);
 </script>
-
 </body>
 </html>
