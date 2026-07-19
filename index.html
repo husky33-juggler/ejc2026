@@ -22,6 +22,10 @@
         .btn-success:hover { background-color: #27ae60; }
         .btn-warning { background-color: #e67e22; color: white; }
         .btn-warning:hover { background-color: #d35400; }
+        .btn-share { background-color: #9b59b6; color: white; }
+        .btn-share:hover { background-color: #8e44ad; }
+        .btn-info { background-color: #16a085; color: white; }
+        .btn-info:hover { background-color: #117a65; }
         
         .day-header { background-color: #34495e; color: white; padding: 10px; margin-top: 25px; border-radius: 4px; }
         .program-item { display: flex; align-items: center; justify-content: space-between; padding: 10px; border-bottom: 1px solid #eee; transition: all 0.2s; }
@@ -39,15 +43,13 @@
     <h1>📅 EJC 2026 – Élő Naptártervező (GitHub Pages)</h1>
     
     <div class="guide-box">
-        <strong>⚡ Hogyan szinkronizáld élőben a Google Naptáradat?</strong>
+        <strong>💡 Útmutató & Biztonságos Élő Naptár Szinkronizáció:</strong>
         <ol>
-            <li>Jelöld be a neked tetsző programokat a listában (Fő esemény vagy Érdekel).</li>
-            <li>Kattints a narancssárga <strong>🔗 Élő Google Naptár link másolása</strong> gombra.</li>
-            <li>Nyisd meg a <a href="https://calendar.google.com" target="_blank">Google Naptárat</a> a számítógépeden.</li>
-            <li>Bal oldalon a <em>"Más naptárak"</em> felirat melletti <strong>+ (Hozzáadás)</strong> gombra kattintva válaszd az <strong>"URL-ről"</strong> opciót.</li>
-            <li>Illeszd be a kimásolt linket, és kattints a <strong>Naptár hozzáadása</strong> gombra. Kész is!</li>
+            <li><strong>Automata Helyi Mentés:</strong> A rendszer mindent azonnal elment a böngésző belső memóriájába (`localStorage`). Ha később visszatérsz ezen a gépen/telefonon, minden beállításod megmarad.</li>
+            <li><strong>Élő Google Naptár összekötés:</strong> Jelöld be a programjaidat, majd kattints a narancssárga gombra. A link végén lévő egyedi azonosítód miatt a Google 100%-ban elkülöníti a te naptáradat mindenki másétól.</li>
+            <li><strong>Hozzáadás a Google-höz:</strong> A kimásolt linkkel menj a <a href="https://calendar.google.com" target="_blank">Google Naptárba</a>, bal oldalt a <em>"Más naptárak"</em> melletti <strong>+</strong> gombra, majd válaszd az <strong>"URL-ről"</strong> lehetőséget és illeszd be.</li>
+            <li><strong>Hordozható megosztás barátokkal:</strong> Használd a lila gombot az órarended kódjának kimentéséhez, ők pedig a kék <strong>📥 Kód beolvasása</strong> gombbal tudják azt megnyitni.</li>
         </ol>
-        <small style="display:block; margin-top: 5px; color: #7f8c8d;">💡 <em>Innentől kezdve ha ezen az oldalon módosítod a választásaidat, a Google Naptárad automatikusan frissülni fog!</em></small>
     </div>
     
     <div id="diff-alert" class="alert-box">
@@ -60,6 +62,8 @@
         <button class="btn btn-primary" onclick="filterList('selected')">Csak a választottak (1 & 2)</button>
         <button class="btn btn-success" onclick="exportPrograms()">Szöveges kimentés</button>
         <button class="btn btn-warning" onclick="copyLiveCalendarLink()">🔗 Élő Google Naptár link másolása</button>
+        <button class="btn btn-share" onclick="copyConfigCode()">🔗 Órarend kódjának másolása</button>
+        <button class="btn btn-info" onclick="importConfigCode()">📥 Kód beolvasása</button>
     </div>
 
     <div id="program-list"></div>
@@ -210,13 +214,19 @@ const rawData = [
 let userSelections = {};
 let currentFilter = 'all';
 
+// MÓDOSÍTÁS: Felhasználói ID inicializálása a legelső megnyitáskor a tökéletes egyediségért
+let userId = localStorage.getItem('ejc2026_userid');
+if (!userId) {
+    userId = 'u_' + Math.random().toString(36).substring(2, 11);
+    localStorage.setItem('ejc2026_userid', userId);
+}
+
 function generateEventId(dayText, eventText) {
     const combined = (dayText + "_" + eventText).toLowerCase();
     return combined.replace(/[^a-z0-9]/g, '');
 }
 
 function loadSelections() {
-    // 1. Megpróbáljuk betölteni a URL paraméterekből (Google szinkronizációhoz és megosztáshoz)
     const params = new URLSearchParams(window.location.search);
     const dataParam = params.get('p');
     if (dataParam) {
@@ -225,7 +235,6 @@ function loadSelections() {
             if (id && value) userSelections[id] = parseInt(value);
         });
     } else {
-        // 2. Ha nincs URL paraméter, betöltjük a helyi memóriából (localStorage)
         const saved = localStorage.getItem('ejc2026_selections');
         if (saved) {
             try { userSelections = JSON.parse(saved); } catch(e) { userSelections = {}; }
@@ -235,18 +244,15 @@ function loadSelections() {
 
 function saveAndSync() {
     localStorage.setItem('ejc2026_selections', JSON.stringify(userSelections));
-    
     const pairs = [];
     for (const id in userSelections) {
         if (userSelections[id] !== 0) pairs.push(`${id}:${userSelections[id]}`);
     }
     const query = pairs.length > 0 ? `?p=${pairs.join(',')}` : '';
-    
-    // GitHub Pages-en ez tökéletesen frissíti az élő URL-t a böngészőben!
     window.history.replaceState({}, '', window.location.pathname + query);
 }
 
-// ÚJ GOMB LOGIKA: Legenerálja a Google által közvetlenül olvasható webcal:// naptár linket
+// MÓDOSÍTÁS: Az élő naptárlink kiegészítése a fix, egyedi felhasználói azonosítóval
 function copyLiveCalendarLink() {
     const pairs = [];
     for (const id in userSelections) {
@@ -254,11 +260,10 @@ function copyLiveCalendarLink() {
     }
     const query = pairs.length > 0 ? `?p=${pairs.join(',')}` : '';
     
-    // Lekapjuk az aktuális weboldal címet, és hozzáfűzzük a naptár-generáló jelzést
     let currentUrl = window.location.href.split('?')[0];
-    let liveCalendarUrl = currentUrl + query;
+    // Hozzáfűzzük a user ID-t, így a link üres állapotban is teljesen egyedi lesz a Google szerverének
+    let liveCalendarUrl = currentUrl + query + (query ? '&' : '?') + 'user=' + userId;
 
-    // Ha a link http/https-el kezdődik, átírjuk webcal-ra, hogy a Google Naptár azonnal kezelje
     if (liveCalendarUrl.startsWith('https://')) {
         liveCalendarUrl = liveCalendarUrl.replace('https://', 'webcal://');
     } else if (liveCalendarUrl.startsWith('http://')) {
@@ -266,16 +271,49 @@ function copyLiveCalendarLink() {
     }
 
     navigator.clipboard.writeText(liveCalendarUrl).then(() => {
-        alert("🔗 Az élő naptár hivatkozásod másolva a vágólapra!\n\nMost már átmehetsz a Google Naptáradba, és a 'Más naptárak > Hozzáadás URL-ről' menüpontba beillesztheted ezt a címet.");
+        alert("🔗 Az élő, teljesen egyedi naptár hivatkozásod másolva a vágólapra!\n\nMost már átmehetsz a Google Naptáradba, és a 'Más naptárak > Hozzáadás URL-ről' menüpontba beillesztheted ezt a címet.");
     }).catch(() => {
         alert("A naptár linkje:\n\n" + liveCalendarUrl);
     });
 }
 
-// Ez a rejtett funkció felelős azért, hogy HA a Google szervere kéri le az oldalt, egyből a kész naptárfájlt dobja vissza neki szövegesen!
+function copyConfigCode() {
+    const pairs = [];
+    for (const id in userSelections) {
+        if (userSelections[id] !== 0) pairs.push(`${id}:${userSelections[id]}`);
+    }
+    if(pairs.length === 0) {
+        alert("Még semmit sem jelöltél be, nincs mit másolni!");
+        return;
+    }
+    const configCode = pairs.join(',');
+    navigator.clipboard.writeText(configCode).then(() => {
+        alert("📋 Az órarended egyedi kódja sikeresen másolva a vágólapra!");
+    }).catch(() => {
+        alert("A kódod:\n\n" + configCode);
+    });
+}
+
+function importConfigCode() {
+    const code = prompt("Illeszd be ide a korábban kimásolt órarend kódot:");
+    if (!code) return;
+    try {
+        const newSelections = {};
+        code.split(',').forEach(pair => {
+            const [id, value] = pair.split(':');
+            if (id && value) newSelections[id] = parseInt(value);
+        });
+        userSelections = newSelections;
+        saveAndSync();
+        renderList();
+        alert("📥 Az órarend sikeresen beolvasva és elmentve!");
+    } catch(e) {
+        alert("Érvénytelen kód formátum.");
+    }
+}
+
 function handleGoogleCalendarServerBot() {
     const params = new URLSearchParams(window.location.search);
-    // Ha a Google naptár lekérdezi az oldalt, vagy mi manuálisan generálunk .ics-t
     if (params.has('p') && (navigator.userAgent.includes('Google-Calendar') || window.location.hash === '#ics')) {
         let icsContent = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//EJC 2026 Custom//EN\nCALSCALE:GREGORIAN\nMETHOD:PUBLISH\n";
         let currentDayText = "";
@@ -329,7 +367,6 @@ function handleGoogleCalendarServerBot() {
         });
         icsContent += "END:VCALENDAR";
 
-        // Tiszta text/calendar válaszként adjuk vissza, hogy a Google megértse
         document.body.innerHTML = `<pre style="word-wrap: break-word; white-space: pre-wrap;">${icsContent}</pre>`;
         document.title = "ejc2026.ics";
         window.stop();
@@ -447,9 +484,8 @@ async function checkWebsiteUpdates() {
     } catch (e) {}
 }
 
-// Futtatás betöltéskor
 loadSelections();
-handleGoogleCalendarServerBot(); // Ha a Google botja jön, kiszolgálja naptárként
+handleGoogleCalendarServerBot(); 
 renderList();
 setTimeout(checkWebsiteUpdates, 2000);
 </script>
