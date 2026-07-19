@@ -83,7 +83,6 @@ const dayDates = {
     "📅 Sunday, August 9th": "20260809"
 };
 
-// Segédfüggvény a dátum léptetéséhez (ha éjfél után ér véget az esemény)
 function addDays(dateStr, days) {
     let year = parseInt(dateStr.substring(0,4));
     let month = parseInt(dateStr.substring(4,6)) - 1;
@@ -279,8 +278,6 @@ function copyLiveCalendarLink() {
 
     navigator.clipboard.writeText(liveCalendarUrl).then(() => {
         alert("🔗 Az élő, teljesen egyedi naptár hivatkozásod másolva a vágólapra!");
-    }).catch(() => {
-        alert("A naptár linkje:\n\n" + liveCalendarUrl);
     });
 }
 
@@ -312,7 +309,7 @@ function importConfigCode() {
     } catch(e) { alert("Hiba."); }
 }
 
-// FIX: Okos naptárfájl generátor (Egész napos programok és éjféli átnyúlások javítása)
+// FIX: Teljesen áttervezett naptár-generáló motor éjféli, dupla idősávos és nyers szöveges javításokkal
 function handleGoogleCalendarServerBot() {
     const params = new URLSearchParams(window.location.search);
     if (params.has('p') && (navigator.userAgent.includes('Google-Calendar') || window.location.hash === '#ics')) {
@@ -327,60 +324,86 @@ function handleGoogleCalendarServerBot() {
                 const level = userSelections[eventId];
                 
                 if (level === 1 || level === 2) {
-                    const dateStr = dayDates[currentDayText];
+                    let dateStr = dayDates[currentDayText];
                     if (!dateStr) return;
 
-                    let summary = item.text;
                     const prefix = level === 1 ? "⭐ [EJC FŐ] " : "👍 [EJC] ";
                     
+                    // Feldolgozandó al-események tömbje (dupla időpontok miatt)
+                    let subEvents = [];
+
+                    // 1. ESET: Dupla időpontok, pl: "18:00 and 20:00 | STREET PERFORMANCES..."
+                    const doubleTimeMatch = item.text.match(/^(\d{2}):(\d{2})\s+and\s+(\d{2}):(\d{2})\s*\|\s*(.*)/);
+                    // 2. ESET: Hagyományos tól-ig idősáv, pl: "18:00 - 03:00 | Welcome party..."
                     const timeMatch = item.text.match(/^(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2})\s*\|\s*(.*)/);
+                    // 3. ESET: Egyetlen fix időpont, pl: "21:00 | OPEN STAGE..." vagy "00:00 | RENEGADE..."
                     const singleTimeMatch = item.text.match(/^(\d{2}):(\d{2})\s*\|\s*(.*)/);
+                    // 4. ESET: Kezdési időpont, pl: "from 12:00 | Registrations"
                     const fromTimeMatch = item.text.match(/^from\s*(\d{2}):(\d{2})\s*\|\s*(.*)/);
 
-                    icsContent += "BEGIN:VEVENT\n";
-
-                    if (timeMatch) {
-                        let startH = timeMatch[1], startM = timeMatch[2];
-                        let endH = timeMatch[3], endM = timeMatch[4];
-                        summary = timeMatch[5];
-                        
-                        let endDateStr = dateStr;
-                        // Ha a végóra kisebb, mint a kezdőóra, akkor az esemény átnyúlik másnapra (pl. 18:00 - 03:00)
-                        if (parseInt(endH) < parseInt(startH)) {
-                            endDateStr = addDays(dateStr, 1);
-                        }
-                        
-                        icsContent += `DTSTART;TZID=Europe/Budapest:${dateStr}T${startH}${startM}00\n`;
-                        icsContent += `DTEND;TZID=Europe/Budapest:${endDateStr}T${endH}${endM}00\n`;
+                    if (doubleTimeMatch) {
+                        let textClean = doubleTimeMatch[5];
+                        subEvents.push({ startH: doubleTimeMatch[1], startM: doubleTimeMatch[2], endH: String(parseInt(doubleTimeMatch[1])+1).padStart(2,'0'), endM: doubleTimeMatch[2], title: textClean });
+                        subEvents.push({ startH: doubleTimeMatch[3], startM: doubleTimeMatch[4], endH: String(parseInt(doubleTimeMatch[3])+1).padStart(2,'0'), endM: doubleTimeMatch[4], title: textClean });
+                    } else if (timeMatch) {
+                        subEvents.push({ startH: timeMatch[1], startM: timeMatch[2], endH: timeMatch[3], endM: timeMatch[4], title: timeMatch[5], isRange: true });
                     } else if (singleTimeMatch) {
-                        let startH = singleTimeMatch[1], startM = singleTimeMatch[2];
-                        summary = singleTimeMatch[3];
-                        let endH = String(parseInt(startH) + 1).padStart(2, '0');
-                        let endDateStr = (parseInt(endH) >= 24) ? addDays(dateStr, 1) : dateStr;
-                        if(parseInt(endH) >= 24) endH = String(parseInt(endH) - 24).padStart(2, '0');
-
-                        icsContent += `DTSTART;TZID=Europe/Budapest:${dateStr}T${startH}${startM}00\n`;
-                        icsContent += `DTEND;TZID=Europe/Budapest:${endDateStr}T${endH}${startM}00\n`;
+                        let sH = singleTimeMatch[1];
+                        let eH = String(parseInt(sH) + 1).padStart(2, '0');
+                        subEvents.push({ startH: sH, startM: singleTimeMatch[2], endH: eH, endM: singleTimeMatch[2], title: singleTimeMatch[3] });
                     } else if (fromTimeMatch) {
-                        let startH = fromTimeMatch[1], startM = fromTimeMatch[2];
-                        summary = fromTimeMatch[3];
-                        let endH = String(parseInt(startH) + 2).padStart(2, '0');
-                        let endDateStr = (parseInt(endH) >= 24) ? addDays(dateStr, 1) : dateStr;
-                        if(parseInt(endH) >= 24) endH = String(parseInt(endH) - 24).padStart(2, '0');
-
-                        icsContent += `DTSTART;TZID=Europe/Budapest:${dateStr}T${startH}${startM}00\n`;
-                        icsContent += `DTEND;TZID=Europe/Budapest:${endDateStr}T${endH}${startM}00\n`;
+                        let sH = fromTimeMatch[1];
+                        let eH = String(parseInt(sH) + 2).padStart(2, '0');
+                        subEvents.push({ startH: sH, startM: fromTimeMatch[2], endH: eH, endM: fromTimeMatch[2], title: fromTimeMatch[3] });
                     } else {
-                        // HA NINCS IDŐPONT (pl. Joggling): Beállítjuk tisztán egész napos eseménynek
-                        let nextDayStr = addDays(dateStr, 1);
-                        icsContent += `DTSTART;VALUE=DATE:${dateStr}\n`;
-                        icsContent += `DTEND;VALUE=DATE:${nextDayStr}\n`;
+                        // 5. ESET: Egész napos esemény (időpont nélküli programok)
+                        subEvents.push({ isAllDay: true, title: item.text });
                     }
 
-                    icsContent += `SUMMARY:${prefix}${summary.replace(/,/g, '\\,')}\n`;
-                    icsContent += "DESCRIPTION:EJC 2026 élő program.\\n\n";
-                    icsContent += "STATUS:CONFIRMED\n";
-                    icsContent += "END:VEVENT\n";
+                    // A kinyert al-eseményeket lefordítjuk VEVENT-ekké
+                    subEvents.forEach(sub => {
+                        icsContent += "BEGIN:VEVENT\n";
+                        
+                        if (sub.isAllDay) {
+                            let nextDayStr = addDays(dateStr, 1);
+                            icsContent += `DTSTART;VALUE=DATE:${dateStr}\n`;
+                            icsContent += `DTEND;VALUE=DATE:${nextDayStr}\n`;
+                        } else {
+                            let currentEvDate = dateStr;
+                            let currentEvEndDate = dateStr;
+                            
+                            let sH = parseInt(sub.startH);
+                            let eH = parseInt(sub.endH);
+
+                            // Logikai Éjféli Korrekció: Ha a program egy nap alatt van listázva, de hajnali 00:00 és 03:00 között kezdődik, az valójában a következő nap hajnala.
+                            if (sH >= 0 && sH <= 3) {
+                                currentEvDate = addDays(dateStr, 1);
+                                currentEvEndDate = currentEvDate;
+                            }
+                            
+                            // Ha tól-ig sáv van és a végóra kisebb, mint a kezdőóra, átnyúlik a következő napra (pl: 18:00 - 03:00)
+                            if (sub.isRange && eH < sH) {
+                                currentEvEndDate = addDays(currentEvDate, 1);
+                            }
+                            
+                            // Biztonsági korrekció túlcsorduló órákra (pl. 23 + 1 = 24 -> 00)
+                            let startHourStr = sub.startH;
+                            let endHourStr = sub.endH;
+                            if (eH >= 24) {
+                                endHourStr = String(eH - 24).padStart(2, '0');
+                                currentEvEndDate = addDays(currentEvDate, 1);
+                            }
+
+                            icsContent += `DTSTART;TZID=Europe/Budapest:${currentEvDate}T${startHourStr}${sub.startM}00\n`;
+                            icsContent += `DTEND;TZID=Europe/Budapest:${currentEvEndDate}T${endHourStr}${sub.endM}00\n`;
+                        }
+
+                        // Fix: Nincs több escápelt \, hiba a címekben
+                        icsContent += `SUMMARY:${prefix}${sub.title.trim()}\n`;
+                        icsContent += "DESCRIPTION:EJC 2026 élő program.\\n\n";
+                        icsContent += "STATUS:CONFIRMED\n";
+                        icsContent += "END:VEVENT\n";
+                    });
                 }
             }
         });
@@ -488,7 +511,7 @@ async function checkWebsiteUpdates() {
         const diffDetails = document.getElementById('diff-details');
         if (missingKeywords.length > 0) {
             alertBox.style.display = 'block';
-            diffDetails.innerHTML = `Módosítás történt a hivatalos oldalon!`;
+            diffDetails.innerHTML = `A honlapon módosítás történt!`;
         }
     } catch (e) {}
 }
